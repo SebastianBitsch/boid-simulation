@@ -9,8 +9,15 @@ Features yet to be implemented include predator avoidance, leader boids and goal
 **Video demo**  
 https://www.youtube.com/watch?v=Yl7w26nBwUc&t=1s. 
 
+
 **Sources**  
 http://www.red3d.com/cwr/boids/  
 http://www.kfish.org/boids/pseudocode.html  
 https://en.wikipedia.org/wiki/Quadtree  
+
+
+**Simulation**  
+
+<img width="632" alt="Skærmbillede 2022-05-29 kl  23 51 25" src="https://user-images.githubusercontent.com/72623007/170892670-5cba7f3e-cd0a-436e-b2b0-3c9889dd687d.png">
+
 
