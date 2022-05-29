@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=2]
+
+[ext_resource path="res://Scripts/BoidManager.gd" type="Script" id=1]
+[ext_resource path="res://Scripts/QuadTree.gd" type="Script" id=2]
+
+[node name="MainScene" type="Node2D"]
+script = ExtResource( 1 )
+
+[node name="QuadTree" type="Node2D" parent="."]
+script = ExtResource( 2 )
+
+[node name="Camera2D" type="Camera2D" parent="."]
+current = true
+zoom = Vector2( 3, 3 )
