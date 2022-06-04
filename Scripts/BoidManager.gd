@@ -1,13 +1,15 @@
 extends Node2D
 
 onready var boid_prefab = preload("res://Scenes/Boid.tscn")
+onready var predator_prefab = preload("res://Scenes/Predator.tscn")
 
 # Map bounds # TODO: Change to Vector2i in godot 4
 export(Vector2) var map_size = Vector2(1750,1750)
 
 # Flock properties
+export(int, 0, 20) var num_predators = 5
 export(int, 1, 10000) var num_boids = 1000
-export(int, 1, 10) var max_flock_size = 5
+export(int, 1, 10) var max_flock_size = 15
 
 # Speed
 export var max_speed: = 100.0
@@ -24,9 +26,14 @@ export(float, 1, 100) var view_distance: = 60.0
 export(float, 1, 100) var avoid_distance: = 30.0
 
 var boids: Array
+var predators: Array
+
 var velocities: Array
 var view_distances: Array
- 
+
+var predator_velocities: Array
+var predator_view_distances: Array 
+
 var qt: QuadTree
 var last_qt: QuadTree
 
@@ -44,6 +51,13 @@ func _ready():
 		velocities.append(Vector2.ZERO)
 		view_distances.append(view_distance)
 
+	for _i in range(num_predators):
+		var p = get_random_pos_in_sphere(spawn_radius) 
+		var b = spawn_node(predator_prefab, p)
+
+		# Initialize arrays
+		predators.append(b)
+
 	# Instantiate quadtrees
 	qt = QuadTree.new(Rect2(-map_size/2,map_size))
 	last_qt = qt
@@ -56,6 +70,9 @@ func _physics_process(_delta):
 	
 	# Update position and velocity for every boid
 	for i in range(num_boids):
+		# Insert in quadtree
+		var _success = qt.insert([boids[i].global_position,i])
+		
 		# Only update every second frame
 		if OS.get_ticks_usec() % 2 == 0:
 			velocities[i] = boids[i].move_and_slide(velocities[i])
@@ -71,17 +88,19 @@ func _physics_process(_delta):
 		var separation_vector = vectors[2] * separation_force
 		var flee_vector = vectors[3] * flee_force
 
-		# Update veolcity
+		# Update velocity
 		var acceleration = cohesion_vector + align_vector + separation_vector + flee_vector
-		var velocity = (velocities[i] + acceleration).clamped(max_speed)
+		
+		# Slow down if not accellerating
+		if acceleration == Vector2.ZERO and velocities[i] != Vector2.ZERO:
+			acceleration = -velocities[i] * 0.02
 
+		var velocity = (velocities[i] + acceleration).clamped(max_speed)
 		velocity = bound_position(boids[i].global_position, velocity)
 		velocities[i] = boids[i].move_and_slide(velocity)
 
-		# Insert in quadtree
-		var _success = qt.insert([boids[i].global_position,i])
-		update()
-
+	# Update quadtree drawing
+	update()
 	last_qt = qt
 
 
@@ -124,18 +143,21 @@ func get_flock_status(own_pos, flock: Array):
 		var center_speed = max_speed * (own_pos.distance_to(flock_center) / view_distance)
 		center_vector = center_dir * center_speed
 	
-#	var flee_dir = own_pos.direction_to(player.global_position)
-#	var flee_dist = (own_pos.distance_to(player.global_position) / view_distance)
-#	flee_vector = Vector2.ZERO if 1 < flee_dist else max_speed * flee_dir * flee_dist
+	var flee_dir = own_pos.direction_to(get_global_mouse_position())
+	var flee_dist = (own_pos.distance_to(get_global_mouse_position()) / view_distance)
+	flee_vector = Vector2.ZERO if 2 < flee_dist else max_speed * flee_dir * flee_dist
 
 	return [center_vector, align_vector, avoid_vector, flee_vector]
 
-func _process(_delta):
-	print(Engine.get_frames_per_second())
 
-func get_flock(i):
+
+func get_flock(i: int) -> Array:
+	"""
+	Given an an index of a boid return the indicies of all other
+	boids within its view distance.
+	"""
 	var vd = view_distances[i]
-	var origin = boids[i].global_position - Vector2(vd/2,vd/2)
+	var origin = boids[i].global_position - Vector2(vd*0.5,vd*0.5)
 	var flock = last_qt.query_range(Rect2(origin, Vector2(vd,vd)))
 	
 	# Update view radius
@@ -145,8 +167,12 @@ func get_flock(i):
 		view_distances[i] = view_distance
 	
 	# Get only the indices from the returned flock
+	# Flock is returned on the form (position, index)
 	var indices = []
 	for f in flock:
+		# Dont add the boid itself to the flock
+		if i == f[1]:
+			continue
 		indices.append(f[1])
 
 	return indices
@@ -157,6 +183,7 @@ func _input(_event):
 	if Input.is_action_pressed("ui_cancel"):
 		get_tree().quit()
 
+
 # Draw debug rectangles for every node in the quadtree
 func _draw():
 	if not qt:
@@ -164,7 +191,6 @@ func _draw():
 	var boundaries = qt.get_boundaries()
 	for b in boundaries:
 		draw_rect(b, Color.red, false, 3)
-
 
 
 
