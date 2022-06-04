@@ -8,7 +8,7 @@ export(Vector2) var map_size = Vector2(1750,1750)
 
 # Flock properties
 export(int, 0, 20) var num_predators = 5
-export(int, 1, 10000) var num_boids = 1000
+export(int, 1, 10000) var num_boids = 1500
 export(int, 1, 10) var max_flock_size = 15
 
 # Speed
@@ -25,11 +25,15 @@ export(float, -10, 10) var out_of_bounds_force = 8
 export(float, 1, 100) var view_distance: = 60.0
 export(float, 1, 100) var avoid_distance: = 30.0
 
+var grass: Rect2 = Rect2(Vector2(-250,-250),Vector2(500,500))
+
 var boids: Array
 var predators: Array
 
 var velocities: Array
 var view_distances: Array
+var hunger: Array
+var eating: Array
 
 var predator_velocities: Array
 var predator_view_distances: Array 
@@ -48,8 +52,10 @@ func _ready():
 
 		# Initialize arrays
 		boids.append(b)
-		velocities.append(Vector2.ZERO)
+		velocities.append(Vector2(randf()-0.5,randf()-0.5)*max_speed)
 		view_distances.append(view_distance)
+		hunger.append(0)
+		eating.append(false)
 
 	for _i in range(num_predators):
 		var p = get_random_pos_in_sphere(spawn_radius) 
@@ -62,7 +68,19 @@ func _ready():
 	qt = QuadTree.new(Rect2(-map_size/2,map_size))
 	last_qt = qt
 
-
+func _process(_delta):
+	for i in range(num_boids):
+		if eating[i]:
+			hunger[i] -= 2
+			if hunger[i] <= 0:
+				hunger[i] = 0
+				eating[i] = false
+			continue
+			
+		if should_eat(i):
+			eating[i] = true
+		else:
+			hunger[i] += 1
 
 func _physics_process(_delta):
 	# Create empty quadtree
@@ -70,38 +88,41 @@ func _physics_process(_delta):
 	
 	# Update position and velocity for every boid
 	for i in range(num_boids):
-		# Insert in quadtree
-		var _success = qt.insert([boids[i].global_position,i])
-		
+
 		# Only update every second frame
 		if OS.get_ticks_usec() % 2 == 0:
-			velocities[i] = boids[i].move_and_slide(velocities[i])
+			move_boid(i, velocities[i])
 			continue
 		
 		# Get flock and their collective vectors
 		var flock = get_flock(i)
-		var vectors = get_flock_status(boids[i].global_position, flock)
+		var own_pos = boids[i].global_position
 		
-		# Calculate forces
-		var cohesion_vector = vectors[0] * cohesion_force
-		var align_vector = vectors[1] * align_force
-		var separation_vector = vectors[2] * separation_force
-		var flee_vector = vectors[3] * flee_force
-
-		# Update velocity
+		var cohesion_vector = cohesion_rule(own_pos, flock) * cohesion_force
+		var align_vector = align_rule(flock) * align_force
+		var separation_vector = separation_rule(own_pos, flock) * separation_force
+		var flee_vector = flee_rule(own_pos) * flee_force
+		
 		var acceleration = cohesion_vector + align_vector + separation_vector + flee_vector
 		
-		# Slow down if not accellerating
-		if acceleration == Vector2.ZERO and velocities[i] != Vector2.ZERO:
-			acceleration = -velocities[i] * 0.02
-
+		if eating[i]:
+			acceleration = -velocities[i] * 0.02 + flee_vector
+		
+		# Update velocity
 		var velocity = (velocities[i] + acceleration).clamped(max_speed)
 		velocity = bound_position(boids[i].global_position, velocity)
-		velocities[i] = boids[i].move_and_slide(velocity)
+		
+		move_boid(i, velocity)
 
 	# Update quadtree drawing
 	update()
 	last_qt = qt
+
+
+func move_boid(index: int, velocity: Vector2) -> void:
+	"""Move a boid with a given index by a velocity, and update the quadtree with the new position"""
+	velocities[index] = boids[index].move_and_slide(velocity)
+	var _success = qt.insert([boids[index].global_position,index])
 
 
 func bound_position(pos: Vector2, velocity : Vector2) -> Vector2:
@@ -116,39 +137,46 @@ func bound_position(pos: Vector2, velocity : Vector2) -> Vector2:
 		velocity.y += -out_of_bounds_force
 	return velocity
 
-func get_flock_status(own_pos, flock: Array):
-	var center_vector: = Vector2()
+func cohesion_rule(own_pos: Vector2, flock: Array) -> Vector2:
 	var flock_center: = Vector2()
-	var align_vector: = Vector2()
-	var avoid_vector: = Vector2()
-	var flee_vector: = Vector2()
-
+	
 	for f in flock:
-		var neighbor_pos: Vector2 = boids[f].global_position
-
-		align_vector += velocities[f]
-		flock_center += neighbor_pos
-		
-		var d = own_pos.distance_to(neighbor_pos)
-		if 0 < d and d < avoid_distance:
-			avoid_vector -= (neighbor_pos - own_pos).normalized() * (avoid_distance / d * max_speed)
+		flock_center += boids[f].global_position
 	
-	var flock_size = flock.size()
-	if flock_size:
-		align_vector /= flock_size
-		flock_center /= flock_size
-	
-	if flock_center != Vector2.ZERO:
+	if flock.size():
+		flock_center /= flock.size()
 		var center_dir = own_pos.direction_to(flock_center)
 		var center_speed = max_speed * (own_pos.distance_to(flock_center) / view_distance)
-		center_vector = center_dir * center_speed
+		return center_dir * center_speed
+		
+	return Vector2.ZERO
+
+func align_rule(flock: Array) -> Vector2:
+	var align_vector: = Vector2()
+	for f in flock:
+		align_vector += velocities[f]
 	
+	if flock.size():
+		align_vector /= flock.size()
+	return align_vector
+
+func separation_rule(own_pos: Vector2, flock: Array) -> Vector2:
+	var avoid_vector: = Vector2()
+
+	for f in flock:
+		var d = own_pos.distance_to(boids[f].global_position)
+		if d < avoid_distance:
+			avoid_vector -= (boids[f].global_position - own_pos).normalized() * (avoid_distance / d * max_speed)
+	return avoid_vector
+
+
+func flee_rule(own_pos: Vector2) -> Vector2:
 	var flee_dir = own_pos.direction_to(get_global_mouse_position())
 	var flee_dist = (own_pos.distance_to(get_global_mouse_position()) / view_distance)
-	flee_vector = Vector2.ZERO if 2 < flee_dist else max_speed * flee_dir * flee_dist
+	return Vector2.ZERO if 2 < flee_dist else max_speed * flee_dir * flee_dist 
 
-	return [center_vector, align_vector, avoid_vector, flee_vector]
-
+func should_eat(index: int) -> bool:
+	return grass.has_point(boids[index].global_position) and 1000 < hunger[index]
 
 
 func get_flock(i: int) -> Array:
