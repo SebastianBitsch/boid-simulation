@@ -2,11 +2,12 @@ extends Node2D
 
 class_name QuadTree
 
-export(int, 1, 20) var NODE_CAPACITY: int = 50
+export(int, 1, 20) var NODE_CAPACITY: int = 100
 export(int, 1, 15) var MAX_QUERY_SIZE: int = 10
 
 # Boundary is represented as 2 x Vector2, 
-# one for origin (top left corner) and one for size
+# one for origin (bottom left corner) and one for size 
+#TODO: Coded as thorugh the origin was top left corner - so some things may be wrong
 var boundary: Rect2
 var points: Array
 
@@ -57,8 +58,8 @@ func insert(p: Array) -> bool:
 
 func subdivide():
 	var origin = boundary.position
-	var half_width = boundary.size.x/2
-	var half_height = boundary.size.y/2
+	var half_width = boundary.size.x*0.5
+	var half_height = boundary.size.y*0.5
 
 	var size = Vector2(half_width, half_height)
 	north_west = get_script().new(Rect2(origin, size))
