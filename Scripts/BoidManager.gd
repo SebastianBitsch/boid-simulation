@@ -22,7 +22,7 @@ export(float, -1, 1) var cohesion_force: = 0.05
 export(float, -1, 1) var align_force: = 0.05
 export(float, -1, 1) var separation_force: = 0.05
 export(float, -1, 1) var flee_force: = 0.5
-export(float, -1, 10) var center_force: = 30
+export(float, -1, 10) var center_force: = 5
 
 # Distances
 export(float, 1, 100) var view_distance: = 60.0
@@ -33,10 +33,10 @@ var grass: Rect2 = Rect2(Vector2(-500,500),Vector2(250,250))
 var boids: Array
 var predators: Array
 
-var velocities: Array
+var velocities: PoolVector2Array
 var view_distances: Array
 
-var predator_velocities: Array
+var predator_velocities: PoolVector2Array
 var predator_view_distances: Array 
 
 var qt: QuadTree
@@ -89,17 +89,16 @@ func _physics_process(_delta):
 		var separation_vector = separation_rule(own_pos, flock) * separation_force
 		var flee_vector = flee_rule(own_pos) * flee_force
 		var center_vector = center_rule(own_pos) * center_force
-
-		var acceleration = cohesion_vector + align_vector + separation_vector + flee_vector + center_vector
 		
 		# Update velocity
+		var acceleration = cohesion_vector + align_vector + separation_vector + flee_vector + center_vector
 		var velocity = (velocities[i] + acceleration).clamped(max_boid_speed)
-		#velocity = bound_position(boids[i].global_position, velocity) * center_force
 		
 		move_boid(i, velocity)
 
 	for i in range(num_predators):
 		var flock = get_flock(i)
+
 
 	# Update quadtree drawing
 	update()
@@ -113,6 +112,7 @@ func move_boid(index: int, velocity: Vector2) -> void:
 
 
 func center_rule(pos: Vector2) -> Vector2:
+	""" Move boids to the center of the field if they are out of bounds """
 	if not map_bounds.has_point(pos):
 		var center_dir = pos.direction_to(map_center)
 		return center_dir
@@ -120,6 +120,7 @@ func center_rule(pos: Vector2) -> Vector2:
 
 
 func cohesion_rule(own_pos: Vector2, flock: Array) -> Vector2:
+	""" Make the boid move towards the average position of the flock """
 	var flock_center: = Vector2()
 	
 	for f in flock:
@@ -133,7 +134,9 @@ func cohesion_rule(own_pos: Vector2, flock: Array) -> Vector2:
 	else:
 		return Vector2.ZERO
 
+
 func align_rule(flock: Array) -> Vector2:
+	""" Align the boid to the flock by taking the average of the velocities"""
 	var align_vector: = Vector2()
 	for f in flock:
 		align_vector += velocities[f]
@@ -142,7 +145,9 @@ func align_rule(flock: Array) -> Vector2:
 		align_vector /= flock.size()
 	return align_vector
 
+
 func separation_rule(own_pos: Vector2, flock: Array) -> Vector2:
+	""" Move the boid away from the positions of the nearby boids """
 	var avoid_vector: = Vector2()
 
 	for f in flock:
@@ -157,14 +162,12 @@ func flee_rule(own_pos: Vector2) -> Vector2:
 	var flee_dist = (own_pos.distance_to(get_global_mouse_position()) / view_distance)
 	return Vector2.ZERO if 2 < flee_dist else max_boid_speed * flee_dir * flee_dist 
 
-#func should_eat(index: int) -> bool:
-#	return grass.has_point(boids[index].global_position) and 5000 < hunger[index]
 
 
 func get_flock(i: int) -> Array:
 	"""
-	Given an an index of a boid return the indicies of all other
-	boids within its view distance.
+	Given an an index of a boid return the indicies of all other boids within its
+	view distance. Increase the view distance if the max flock size isnt reached.
 	"""
 	var vd = view_distances[i]
 	var origin = boids[i].global_position - Vector2(vd*0.5,vd*0.5)
@@ -209,6 +212,19 @@ func _draw():
 
 
 # == Helper functions == 
+
+func average(arr:Array):
+	""" A helper function for computing the average of a list of a given type"""
+	
+	# Return nothing if the array is empty
+	if len(arr) == 0:
+		return null
+	
+	var avg = arr[0]
+	for i in range(1,len(arr)):
+		avg += arr[i]
+	return avg / len(arr)
+
 
 func spawn_node(node, pos: Vector2):
 	var s = node.instance()
